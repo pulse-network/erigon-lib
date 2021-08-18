@@ -89,9 +89,9 @@ func (opts MdbxOpts) Set(opt MdbxOpts) MdbxOpts {
 
 func (opts MdbxOpts) InMem() MdbxOpts {
 	opts.inMem = true
-	opts.flags ^= mdbx.Durable
+	//opts.flags ^= mdbx.Durable
 	opts.flags ^= mdbx.NoReadahead
-	opts.flags |= mdbx.UtterlyNoSync | mdbx.NoMetaSync
+	//opts.flags |= mdbx.UtterlyNoSync | mdbx.NoMetaSync
 	return opts
 }
 
