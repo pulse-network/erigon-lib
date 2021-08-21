@@ -57,6 +57,7 @@ Physical layout:
 						...
 */
 const PlainState = "PlainState"
+const AccountID = "AccountID"
 
 //PlainContractCode -
 //key - address+incarnation
@@ -313,6 +314,7 @@ var ChaindataTables = []string{
 	CliqueSnapshot,
 	SyncStageProgress,
 	PlainState,
+	AccountID,
 	PlainContractCode,
 	AccountChangeSet,
 	StorageChangeSet,
@@ -407,7 +409,7 @@ var ChaindataTablesCfg = TableCfg{
 		Flags:                     DupSort,
 		AutoDupSortKeysConversion: true,
 		DupFromLen:                60,
-		DupToLen:                  28,
+		DupToLen:                  16,
 	},
 	CallTraceSet: {
 		Flags: DupSort,
