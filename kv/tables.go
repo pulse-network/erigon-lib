@@ -408,7 +408,7 @@ var ChaindataTablesCfg = TableCfg{
 	PlainState: {
 		Flags:                     DupSort,
 		AutoDupSortKeysConversion: true,
-		DupFromLen:                60,
+		DupFromLen:                48,
 		DupToLen:                  16,
 	},
 	CallTraceSet: {
