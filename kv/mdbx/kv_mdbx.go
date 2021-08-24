@@ -1318,15 +1318,19 @@ func (c *MdbxCursor) putDupSort(key []byte, value []byte) error {
 	}
 
 	if len(key) != from {
-		_, existingV, err := c.set(key)
-		if err != nil { // if key not found, or found another one - then just insert
-			if mdbx.IsNotFound(err) {
-				return c.put(key, value)
+		err := c.putNoOverwrite(key, value)
+		if err != nil {
+			if mdbx.IsKeyExists(err) {
+				_, existingV, err := c.getCurrent()
+				if err != nil {
+					return err
+				}
+				if !bytes.Equal(existingV, value) {
+					return c.putCurrent(key, value)
+				}
+				return nil
 			}
-			return err
-		}
-		if !bytes.Equal(existingV, value) {
-			return c.put(key, value)
+			return fmt.Errorf("putNoOverwrite, bucket: %s, key: %x, val: %x, err: %w", c.bucketName, key, value, err)
 		}
 		return nil
 	}
