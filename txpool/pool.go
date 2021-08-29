@@ -36,7 +36,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-const ASSERT = false
+const ASSERT = true
 
 type Config struct {
 	syncToNewPeersEvery     time.Duration
@@ -581,6 +581,14 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			}
 			if byNonce.count(senderID) > 0 {
 				continue
+			}
+			if ASSERT {
+				_ = tx.ForEach(kv.PooledTransaction, nil, func(k, vv []byte) error {
+					if bytes.Equal(v[i:i+8], vv[:8]) {
+						panic(1)
+					}
+					return nil
+				})
 			}
 			addr, err := tx.GetOne(kv.PooledSenderID, encID)
 			if err != nil {
