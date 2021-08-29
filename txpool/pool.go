@@ -734,6 +734,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
 			found := false
 			_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+				fmt.Printf("tr: %x\n", v)
 				if bytes.Equal(v[:8], idBytes) {
 					found = true
 					return fmt.Errorf("stop")
@@ -743,6 +744,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			if !found {
 				found = false
 				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					fmt.Printf("ev: %x\n", v)
 					for i := 0; i < len(v); i += 8 {
 						vv := v[i : i+8]
 						if bytes.Equal(vv, idBytes) {
