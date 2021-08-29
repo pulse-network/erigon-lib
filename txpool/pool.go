@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-stack/stack"
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/holiman/uint256"
@@ -215,6 +216,7 @@ func (sc *SendersCache) info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo,
 			}
 			return nil, nil // don't fallback to core db, it will be manually done in right place
 		}
+		fmt.Printf("stack:%s\n", stack.Trace().String())
 		balance := uint256.NewInt(0)
 		balance.SetBytes(v[8:])
 		info = newSenderInfo(binary.BigEndian.Uint64(v), *balance)
@@ -566,7 +568,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		return evicted, err
 	}
 	defer c.Close()
-	//justDeleted := []uint64{}
+	var justDeleted, justInserted []uint64
 	for k, v, err := c.First(); k != nil; k, v, err = c.Next() {
 		if err != nil {
 			return evicted, err
@@ -607,14 +609,15 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 				return evicted, err
 			}
 			evicted++
-			//justDeleted = append(justDeleted, senderID)
+			if ASSERT {
+				justDeleted = append(justDeleted, senderID)
+			}
 		}
 		if err := c.DeleteCurrent(); err != nil {
 			return evicted, err
 		}
 	}
 
-	//justInserted := []uint64{}
 	for addr, id := range sc.senderIDs {
 		binary.BigEndian.PutUint64(encID, id)
 		currentV, err := tx.GetOne(kv.PooledSenderID, []byte(addr))
@@ -631,20 +634,29 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if err := tx.Put(kv.PooledSenderIDToAdress, encID, []byte(addr)); err != nil {
 			return evicted, err
 		}
-		//justInserted = append(justInserted, id)
+		if ASSERT {
+			justInserted = append(justInserted, id)
+		}
 	}
-	//sort.Slice(justInserted, func(i, j int) bool { return justInserted[i] < justInserted[j] })
+	if ASSERT {
+		sort.Slice(justInserted, func(i, j int) bool { return justInserted[i] < justInserted[j] })
+	}
 
 	v := make([]byte, 8, 8+32)
 	for id, info := range sc.senderInfo {
+		if info.nonce == 0 && info.balance.IsZero() {
+			continue
+		}
 		binary.BigEndian.PutUint64(encID, id)
 		binary.BigEndian.PutUint64(v, info.nonce)
 		v = append(v[:8], info.balance.Bytes()...)
+		//TODO: check that nothing changed
+		fmt.Printf("Put: %d,%d,%d\n", id, info.nonce, info.balance.Uint64())
 		if err := tx.Put(kv.PooledSender, encID, v); err != nil {
 			return evicted, err
 		}
 	}
-	//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
+	fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
 	if ASSERT {
 		{
 			duplicates := map[string]uint64{}
@@ -728,45 +740,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 	}
 	if err := tx.Put(kv.PoolInfo, SenderCommitTimeKey, lastCommitTime); err != nil {
 		return evicted, err
-	}
-
-	if ASSERT {
-		_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
-			found := false
-			_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
-				if bytes.Equal(v[:8], idBytes) {
-					found = true
-					return fmt.Errorf("stop")
-				}
-				return nil
-			})
-			if !found {
-				found = false
-				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
-					for i := 0; i < len(v); i += 8 {
-						vv := v[i : i+8]
-						if bytes.Equal(vv, idBytes) {
-							found = true
-							return fmt.Errorf("stop")
-						}
-					}
-					return nil
-				})
-			}
-			if !found {
-				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
-					fmt.Printf("ev: %x\n", v)
-					return nil
-				})
-				_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
-					fmt.Printf("tr: %x\n", v)
-					return nil
-				})
-				fmt.Printf("garbage found: %x\n", idBytes)
-				panic(1)
-			}
-			return nil
-		})
 	}
 
 	sc.senderIDs = map[string]uint64{}
@@ -1134,12 +1107,18 @@ func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	sendersWithoutTransactionsUnique := map[uint64]struct{}{}
-	sendersWithoutTransactions := []uint64{}
+	var sendersWithoutTransactions []uint64
+	fmt.Printf("--: %d\n", p.txNonce2Tx.tree.Len())
+	p.printDebug("flush")
 	for i := 0; i < len(p.deletedTxs); i++ {
+		//fmt.Printf("del: %d,%d\n", p.deletedTxs[i].Tx.senderID, p.txNonce2Tx.count(p.deletedTxs[i].Tx.senderID))
 		if p.txNonce2Tx.count(p.deletedTxs[i].Tx.senderID) == 0 {
+			//if _, ok := sendersWithoutTransactionsUnique[p.deletedTxs[i].Tx.senderID]; ok {
+			//}
 			sendersWithoutTransactionsUnique[p.deletedTxs[i].Tx.senderID] = struct{}{}
 			sendersWithoutTransactions = append(sendersWithoutTransactions, p.deletedTxs[i].Tx.senderID)
 		}
+
 		if err := tx.Delete(kv.PooledTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
 			return evicted, err
 		}
@@ -1149,6 +1128,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 		return sendersWithoutTransactions[i] < sendersWithoutTransactions[j]
 	})
 
+	fmt.Printf("del: %d\n", sendersWithoutTransactions)
 	txHashes := p.localsHistory.Keys()
 	encID := make([]byte, 8)
 	if err := tx.ClearBucket(kv.RecentLocalTransaction); err != nil {
@@ -1256,6 +1236,54 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	evicted, err = p.senders.flush(tx, p.txNonce2Tx, sendersWithoutTransactions, p.cfg.evictSendersAfterRounds)
 	if err != nil {
 		return evicted, err
+	}
+
+	if ASSERT {
+		_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+			found := false
+			_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+				if bytes.Equal(v[:8], idBytes) {
+					found = true
+					return fmt.Errorf("stop")
+				}
+				return nil
+			})
+			if !found {
+				found = false
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					for i := 0; i < len(v); i += 8 {
+						vv := v[i : i+8]
+						if bytes.Equal(vv, idBytes) {
+							found = true
+							return fmt.Errorf("stop")
+						}
+					}
+					return nil
+				})
+			}
+			if !found {
+				if p.txNonce2Tx.count(binary.BigEndian.Uint64(idBytes)) > 0 {
+					panic("?")
+				}
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					fmt.Printf("ev: %x\n", v)
+					return nil
+				})
+				_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+					fmt.Printf("tr: %x\n", v)
+					return nil
+				})
+				_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+					fmt.Printf("id2addr: %x\n", idBytes)
+					return nil
+				})
+				p.senders.printDebug("gb")
+				fmt.Printf("sz:%d,%d\n", p.txNonce2Tx.tree.Len(), sendersWithoutTransactions)
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic(1)
+			}
+			return nil
+		})
 	}
 
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
