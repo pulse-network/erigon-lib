@@ -992,12 +992,6 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, pendingBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
-	for i, j := range p.senders.senderIDs {
-		fmt.Printf("ids:%x,%d\n", i, j)
-	}
-	for i, j := range p.senders.senderInfo {
-		fmt.Printf("info:%d,%x\n", i, j)
-	}
 	notifyNewTxs := make(Hashes, 0, 32*len(newTxs.txs))
 	for i := range newTxs.txs {
 		_, ok := p.byHash[string(newTxs.txs[i].idHash[:])]
