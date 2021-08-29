@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/holiman/uint256"
@@ -34,6 +35,13 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
+)
+
+var (
+	onNewTxsTimer     = metrics.NewSummary("pool_new_txs")
+	onNewBlockTimer   = metrics.NewSummary("pool_new_block")
+	cacheHitCounter   = metrics.NewCounter("pool_cache_hit")
+	cacheTotalCounter = metrics.NewCounter("pool_cache_total")
 )
 
 const ASSERT = true
@@ -200,26 +208,29 @@ func (sc *SendersCache) Info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo,
 	return sc.info(id, tx, expectMiss)
 }
 func (sc *SendersCache) info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo, error) {
+	cacheTotalCounter.Inc()
 	info, ok := sc.senderInfo[id]
-	if !ok {
-		encID := make([]byte, 8)
-		binary.BigEndian.PutUint64(encID, id)
-		v, err := tx.GetOne(kv.PoolSender, encID)
-		if err != nil {
-			return nil, err
-		}
-		if len(v) == 0 {
-			if !expectMiss {
-				fmt.Printf("sender not loaded in advance: %d\n", id)
-				panic("all senders must be loaded in advance")
-			}
-			return nil, nil // don't fallback to core db, it will be manually done in right place
-		}
-		balance := uint256.NewInt(0)
-		balance.SetBytes(v[8:])
-		info = newSenderInfo(binary.BigEndian.Uint64(v), *balance)
+	if ok {
+		cacheHitCounter.Inc()
+		return info, nil
 	}
-	return info, nil
+	encID := make([]byte, 8)
+	binary.BigEndian.PutUint64(encID, id)
+	v, err := tx.GetOne(kv.PoolSender, encID)
+	if err != nil {
+		return nil, err
+	}
+	if len(v) == 0 {
+		if !expectMiss {
+			fmt.Printf("sender not loaded in advance: %d\n", id)
+			panic("all senders must be loaded in advance")
+		}
+		return nil, nil // don't fallback to core db, it will be manually done in right place
+	}
+	cacheHitCounter.Inc()
+	balance := uint256.NewInt(0)
+	balance.SetBytes(v[8:])
+	return newSenderInfo(binary.BigEndian.Uint64(v), *balance), nil
 }
 
 //nolint
@@ -951,7 +962,7 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 	if len(newTxs.txs) == 0 {
 		return nil
 	}
-
+	defer onNewTxsTimer.UpdateDuration(time.Now())
 	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -978,7 +989,6 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 	if protocolBaseFee == 0 || pendingBaseFee == 0 {
 		return fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, pendingBaseFee)
 	}
-	fmt.Printf("onNewTx\n")
 	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, pendingBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
@@ -1046,13 +1056,7 @@ func (p *TxPool) setBaseFee(protocolBaseFee, pendingBaseFee uint64) (uint64, uin
 func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, protocolBaseFee, pendingBaseFee, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	fmt.Printf("onNewBlock\n")
-	for _, j := range unwindTxs.txs {
-		fmt.Printf("unw: %d\n", j.senderID)
-	}
-	for _, j := range minedTxs.txs {
-		fmt.Printf("min: %d\n", j.senderID)
-	}
+	defer onNewBlockTimer.UpdateDuration(time.Now())
 
 	t := time.Now()
 	tx, err := p.db.BeginRo(context.Background())
@@ -1092,7 +1096,6 @@ func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, mined
 	}
 
 	log.Info("on new block", "in", time.Since(t))
-	fmt.Printf("onNewBlock end\n")
 	return nil
 }
 func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
@@ -1117,8 +1120,6 @@ func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
 func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	sendersWithoutTransactionsUnique := map[uint64]struct{}{}
 	var sendersWithoutTransactions []uint64
-	fmt.Printf("--: %d\n", p.txNonce2Tx.tree.Len())
-	p.printDebug("flush")
 	for i := 0; i < len(p.deletedTxs); i++ {
 		//fmt.Printf("del: %d,%d\n", p.deletedTxs[i].Tx.senderID, p.txNonce2Tx.count(p.deletedTxs[i].Tx.senderID))
 		if p.txNonce2Tx.count(p.deletedTxs[i].Tx.senderID) == 0 {
