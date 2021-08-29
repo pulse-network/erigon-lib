@@ -691,35 +691,37 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			})
 		}
 	}
-	if ASSERT {
-		_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-			vv, err := tx.GetOne(kv.PoolSenderIDToAdress, v[:8])
-			if err != nil {
-				return err
-			}
-			if len(vv) == 0 {
-				cc, _ := tx.Cursor(kv.PoolSenderIDToAdress)
-				last, lastAddr, _ := cc.Last()
-				slots := TxSlots{}
-				slots.Growth(1)
-				slots.txs[0] = &TxSlot{}
-				parseCtx := NewTxParseContext()
-				_, err := parseCtx.ParseTransaction(v[8+8:], 0, slots.txs[0], slots.senders.At(0))
+	/*
+		if ASSERT {
+			_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
+				vv, err := tx.GetOne(kv.PoolSenderIDToAdress, v[:8])
 				if err != nil {
-					log.Error("er", "er", err)
+					return err
 				}
-				fmt.Printf("sender:%x, txHash: %x\n", slots.senders.At(0), slots.txs[0].idHash)
+				if len(vv) == 0 {
+					cc, _ := tx.Cursor(kv.PoolSenderIDToAdress)
+					last, lastAddr, _ := cc.Last()
+					slots := TxSlots{}
+					slots.Growth(1)
+					slots.txs[0] = &TxSlot{}
+					parseCtx := NewTxParseContext()
+					_, err := parseCtx.ParseTransaction(v[8+8:], 0, slots.txs[0], slots.senders.At(0))
+					if err != nil {
+						log.Error("er", "er", err)
+					}
+					fmt.Printf("sender:%x, txHash: %x\n", slots.senders.At(0), slots.txs[0].idHash)
 
-				fmt.Printf("last: %d,%x\n", binary.BigEndian.Uint64(last), lastAddr)
-				fmt.Printf("now: %d\n", sc.senderID)
-				fmt.Printf("not foundd: %d,%x,%x,%x\n", binary.BigEndian.Uint64(v[:8]), k, v, vv)
-				fmt.Printf("aa: %x,%x,%x\n", k, v, vv)
-				//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
-				panic("no-no")
-			}
-			return nil
-		})
-	}
+					fmt.Printf("last: %d,%x\n", binary.BigEndian.Uint64(last), lastAddr)
+					fmt.Printf("now: %d\n", sc.senderID)
+					fmt.Printf("not foundd: %d,%x,%x,%x\n", binary.BigEndian.Uint64(v[:8]), k, v, vv)
+					fmt.Printf("aa: %x,%x,%x\n", k, v, vv)
+					//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
+					panic("no-no")
+				}
+				return nil
+			})
+		}
+	*/
 
 	binary.BigEndian.PutUint64(encID, sc.blockHeight.Load())
 	if err := tx.Put(kv.PoolInfo, SenderCacheHeightKey, encID); err != nil {
