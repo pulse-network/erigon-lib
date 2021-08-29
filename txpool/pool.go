@@ -1449,8 +1449,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	if err := onNewTxs(tx, p.senders, txs, protocolBaseFee, pendingBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
-	p.printDebug("af")
-	p.senders.printDebug("af")
 	p.pendingBaseFee.Store(pendingBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
 
