@@ -153,6 +153,9 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		if err != nil {
 			return 0, fmt.Errorf("%s: envelope Prefix: %v", ParseTransactionErrorPrefix, err)
 		}
+		if dataPos+dataLen > len(payload) {
+			fmt.Printf("payload: %x\n", payload)
+		}
 		// Hash the envelope, not the full payload
 		if _, err = ctx.keccak1.Write(payload[p : dataPos+dataLen]); err != nil {
 			return 0, fmt.Errorf("%s: computing idHash (hashing the envelope): %w", ParseTransactionErrorPrefix, err)
