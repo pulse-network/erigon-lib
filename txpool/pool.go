@@ -1295,8 +1295,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 					}
 					return nil
 				})
-				fmt.Printf("garbage found: %x\n", idBytes)
-				panic("found")
 			}
 			if !found {
 				fmt.Printf("garbage found: %x\n", idBytes)
