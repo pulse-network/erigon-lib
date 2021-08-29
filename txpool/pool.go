@@ -1038,7 +1038,7 @@ func onNewTxs(tx kv.Tx, senders *SendersCache, newTxs TxSlots, protocolBaseFee, 
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee)
+		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee, discard)
 	}
 
 	pending.EnforceInvariants()
@@ -1439,7 +1439,7 @@ func onNewBlock(tx kv.Tx, senders *SendersCache, unwindTxs TxSlots, minedTxs []*
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee)
+		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee, discard)
 	}
 
 	pending.EnforceInvariants()
@@ -1577,7 +1577,7 @@ func unsafeAddToPendingPool(byNonce *ByNonce, newTxs TxSlots, pending, baseFee, 
 	return changedSenders
 }
 
-func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64) {
+func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, discard func(*metaTx)) {
 	if ASSERT && sender == nil {
 		fmt.Printf("nil sender info: %d\n", senderID)
 	}
@@ -1607,6 +1607,7 @@ func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, proto
 			mt.subPool |= EnoughFeeCapProtocol
 		} else {
 			mt.subPool = 0 // TODO: we immediately drop all transactions if they have no first bit - then maybe we don't need this bit at all? And don't add such transactions to queue?
+			discard(mt)
 			return true
 		}
 

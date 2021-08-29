@@ -55,5 +55,20 @@ func TestSenders(t *testing.T) {
 		require.NoError(err)
 		require.Equal(1, int(evicted))
 	})
+	t.Run("all_changes_are_written_to_db", func(t *testing.T) {
+		senders, require := NewSendersCache(), require.New(t)
+		_, tx := memdb.NewTestPoolTx(t)
+		byNonce := &ByNonce{btree.New(16)}
+
+		senders.senderInfo[1] = newSenderInfo(1, *uint256.NewInt(1))
+		senders.senderInfo[2] = newSenderInfo(1, *uint256.NewInt(1))
+		evicted, err := senders.flush(tx, byNonce, []uint64{1, 2, 3, 4, 5}, 1)
+		require.NoError(err)
+		require.Zero(evicted)
+		senders.senderInfo[1] = newSenderInfo(1, *uint256.NewInt(1)) // means used in current round, but still has 0 transactions
+		evicted, err = senders.flush(tx, byNonce, []uint64{1, 2, 3}, 1)
+		require.NoError(err)
+		require.Equal(1, int(evicted))
+	})
 
 }
