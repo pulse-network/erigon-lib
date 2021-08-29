@@ -752,8 +752,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 					}
 					return nil
 				})
-				fmt.Printf("garbage found: %x\n", idBytes)
-				panic("found")
 			}
 			if !found {
 				fmt.Printf("garbage found: %x\n", idBytes)
