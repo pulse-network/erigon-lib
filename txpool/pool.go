@@ -722,6 +722,39 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		return evicted, err
 	}
 
+	if ASSERT {
+		_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+			found := false
+			_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+				if bytes.Equal(v[:8], idBytes) {
+					found = true
+					return fmt.Errorf("stop")
+				}
+				return nil
+			})
+			if !found {
+				found = false
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					for i := 0; i < len(v); i += 8 {
+						vv := v[i : i+8]
+						if bytes.Equal(vv, idBytes) {
+							found = true
+							return fmt.Errorf("stop")
+						}
+					}
+					return nil
+				})
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic("found")
+			}
+			if !found {
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic(1)
+			}
+			return nil
+		})
+	}
+
 	sc.senderIDs = map[string]uint64{}
 	sc.senderInfo = map[uint64]*senderInfo{}
 	return evicted, nil
@@ -1234,6 +1267,39 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	if ASSERT {
+		_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+			found := false
+			_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+				if bytes.Equal(v[:8], idBytes) {
+					found = true
+					return fmt.Errorf("stop")
+				}
+				return nil
+			})
+			if !found {
+				found = false
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					for i := 0; i < len(v); i += 8 {
+						vv := v[i : i+8]
+						if bytes.Equal(vv, idBytes) {
+							found = true
+							return fmt.Errorf("stop")
+						}
+					}
+					return nil
+				})
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic("found")
+			}
+			if !found {
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic(1)
+			}
+			return nil
+		})
+	}
+
 	if ASSERT {
 		_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
 			vv, err := tx.GetOne(kv.PooledSenderIDToAdress, v[:8])
