@@ -1211,6 +1211,54 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 		return evicted, err
 	}
 
+	if ASSERT {
+		_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+			found := false
+			_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+				if bytes.Equal(v[:8], idBytes) {
+					found = true
+					return fmt.Errorf("stop")
+				}
+				return nil
+			})
+			if !found {
+				found = false
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					for i := 0; i < len(v); i += 8 {
+						vv := v[i : i+8]
+						if bytes.Equal(vv, idBytes) {
+							found = true
+							return fmt.Errorf("stop")
+						}
+					}
+					return nil
+				})
+			}
+			if !found {
+				if p.txNonce2Tx.count(binary.BigEndian.Uint64(idBytes)) > 0 {
+					panic("?")
+				}
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					fmt.Printf("ev: %x\n", v)
+					return nil
+				})
+				_ = tx.ForEach(kv.PooledTransaction, nil, func(k, v []byte) error {
+					fmt.Printf("tr: %x\n", v)
+					return nil
+				})
+				_ = tx.ForEach(kv.PooledSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+					fmt.Printf("id2addr: %x\n", idBytes)
+					return nil
+				})
+				p.senders.printDebug("gb")
+				fmt.Printf("sz:%d,%d\n", p.txNonce2Tx.tree.Len(), sendersWithoutTransactions)
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic(1)
+			}
+			return nil
+		})
+	}
+
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
