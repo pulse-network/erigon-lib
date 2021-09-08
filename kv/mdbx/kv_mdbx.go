@@ -354,7 +354,7 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, db.opts.label.String(), callers(10))
 	}
-	tx.RawRead = true
+	tx.RawRead = false
 	return &MdbxTx{
 		db:       db,
 		tx:       tx,
