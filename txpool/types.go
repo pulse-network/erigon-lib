@@ -120,9 +120,11 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// Compute transaction hash
 	ctx.keccak1.Reset()
 	ctx.keccak2.Reset()
+
+	legacy := len(payload)-pos > 0 && payload[pos] > 0x7f
 	// Legacy transations have list Prefix, whereas EIP-2718 transactions have string Prefix
 	// therefore we assign the first returned value of Prefix function (list) to legacy variable
-	dataPos, dataLen, legacy, err := rlp.Prefix(payload, pos)
+	dataPos, dataLen, _, err := rlp.Prefix(payload, pos)
 	if err != nil {
 		return 0, fmt.Errorf("%s: size Prefix: %v", ParseTransactionErrorPrefix, err)
 	}

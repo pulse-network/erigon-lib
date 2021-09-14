@@ -1574,7 +1574,9 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 
 		_, err := parseCtx.ParseTransaction(txRlp, 0, txs.txs[i], nil)
 		if err != nil {
-			return fmt.Errorf("err: %w, rlp: %x\n", err, txRlp)
+			log.Debug("tx from db parse error, removing it from db", "err", err)
+			_ = tx.Delete(kv.PoolTransaction, k, nil)
+			return nil
 		}
 		txs.txs[i].rlp = nil // means that we don't need store it in db anymore
 		copy(txs.senders.At(i), addr)
