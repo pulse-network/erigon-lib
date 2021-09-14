@@ -121,7 +121,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	ctx.keccak1.Reset()
 	ctx.keccak2.Reset()
 
-	legacy := len(payload)-pos > 0 && payload[pos] > 0x7f
 	// Legacy transations have list Prefix, whereas EIP-2718 transactions have string Prefix
 	// therefore we assign the first returned value of Prefix function (list) to legacy variable
 	dataPos, dataLen, _, err := rlp.Prefix(payload, pos)
@@ -136,6 +135,8 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		return 0, fmt.Errorf("%s: transaction must be either 1 list or 1 string", ParseTransactionErrorPrefix)
 	}
 	p = dataPos
+	legacy := payload[p] > 0x7f
+	fmt.Printf("b: %t,%d,%d\n", legacy, p, payload[p])
 
 	var txType int
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
@@ -180,10 +181,13 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	}
 	// Next follows gas price or tip
 	// Although consensus rules specify that tip can be up to 256 bit long, we narrow it to 64 bit
-	p, slot.tip, err = rlp.U64(payload, p)
+	a := uint256.NewInt(0)
+	fmt.Printf("adf: %d,%x,%t\n", p, payload[p:p+20], legacy)
+	p, err = rlp.U256(payload, p, a)
 	if err != nil {
 		return 0, fmt.Errorf("%s: tip: %w", ParseTransactionErrorPrefix, err)
 	}
+	slot.tip = a.Uint64()
 	// Next follows feeCap, but only for dynamic fee transactions, for legacy transaction, it is
 	// equal to tip
 	if txType < DynamicFeeTxType {
