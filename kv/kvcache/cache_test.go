@@ -41,7 +41,7 @@ func TestAPI(t *testing.T) {
 	c := New(DefaultCoherentCacheConfig)
 	k1, k2 := [20]byte{1}, [20]byte{2}
 	db := memdb.NewTestDB(t)
-	get := func(key [20]byte, expectBlockN uint64) (res [1]chan []byte) {
+	get := func(key [20]byte, expectBlockN uint64) (res [10]chan []byte) {
 		wg := sync.WaitGroup{}
 		for i := 0; i < len(res); i++ {
 			wg.Add(1)
