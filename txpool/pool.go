@@ -29,7 +29,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/go-stack/stack"
 	"github.com/google/btree"
@@ -269,20 +268,6 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, 
 	}
 	return nil
 }
-
-func (sc *sendersBatch) setTxSenderID(txs TxSlots) {
-	for i := range txs.txs {
-		addr := string(txs.senders.At(i))
-
-		// assign ID to each new sender
-		id, ok := sc.id(addr)
-		if !ok {
-			panic("not supported yet")
-		}
-		txs.txs[i].senderID = id
-	}
-}
-
 func calcProtocolBaseFee(baseFee uint64) uint64 {
 	return 7
 }
@@ -428,13 +413,12 @@ func (p *TxPool) logStats() {
 	for i := range stats {
 		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
 	}
-	ages := kvcache.DebugAges(p.senders.cache)
-	for i := range ages {
-		log.Info("[txpool] age", "age", ages[i].BlockNum, "amount", ages[i].Lenght)
-	}
-	if ASSERT {
-
-	}
+	//if ASSERT {
+	//ages := kvcache.DebugAges(p.senders.cache)
+	//for i := range ages {
+	//	log.Info("[txpool] age", "age", ages[i].BlockNum, "amount", ages[i].Lenght)
+	//}
+	//}
 }
 func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
 	txn, ok := p.byHash[string(hash)]
@@ -744,7 +728,7 @@ func onNewTxs(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, newT
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
-	pending.EnforceBestInvariants() //TODO: find way to enforce invariants once. promote - now expect invariants - but can it work without them?
+	pending.EnforceBestInvariants()
 
 	return nil
 }
@@ -1461,7 +1445,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
 		case <-cacheEvictEvery.C:
-			p.senders.cache.Evict()
+			//p.senders.cache.Evict()
 		}
 	}
 }
@@ -1487,10 +1471,13 @@ func (p *TxPool) flush(db kv.RwDB) (written uint64, err error) {
 	return written, nil
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
-	sendersWithoutTransactions := roaring64.New()
 	for i := 0; i < len(p.deletedTxs); i++ {
 		if p.byNonce.count(p.deletedTxs[i].Tx.senderID) == 0 {
-			sendersWithoutTransactions.Add(p.deletedTxs[i].Tx.senderID)
+			addr, ok := p.senders.senderID2Addr[p.deletedTxs[i].Tx.senderID]
+			if ok {
+				delete(p.senders.senderID2Addr, p.deletedTxs[i].Tx.senderID)
+				delete(p.senders.senderIDs, addr)
+			}
 		}
 		if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
 			return err
@@ -1524,6 +1511,10 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		}
 		copy(v[20:], metaTx.Tx.rlp)
 
+		has, _ := tx.Has(kv.PoolTransaction, []byte(txHash))
+		if has {
+			panic("must not happen")
+		}
 		if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
 			return err
 		}

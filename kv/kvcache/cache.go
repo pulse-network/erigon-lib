@@ -406,7 +406,7 @@ func (c *Coherent) Evict() {
 	latestBlockNum, preLatestRoot := c.evictionInfo()
 	c.evictRoots(latestBlockNum - 10)
 	if preLatestRoot != nil {
-		preLatestRoot.evict(20, 120_000)
+		preLatestRoot.evict(100, 200_000)
 	}
 }
 
