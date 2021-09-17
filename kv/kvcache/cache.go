@@ -106,7 +106,7 @@ type CoherentCacheConfig struct {
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
-	KeepViews:    100,
+	KeepViews:    50,
 	NewBlockWait: 50 * time.Millisecond,
 	MetricsLabel: "default",
 	WithStorage:  false,

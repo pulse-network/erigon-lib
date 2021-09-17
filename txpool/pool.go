@@ -63,6 +63,10 @@ type Config struct {
 	CommitEvery           time.Duration
 	LogEvery              time.Duration
 	CacheEvictEvery       time.Duration
+
+	PendingSubPoolLimit int
+	BaseFeeSubPoolLimit int
+	QueuedSubPoolLimit  int
 }
 
 var DefaultConfig = Config{
@@ -71,6 +75,10 @@ var DefaultConfig = Config{
 	CommitEvery:           15 * time.Second,
 	LogEvery:              30 * time.Second,
 	CacheEvictEvery:       1 * time.Minute,
+
+	PendingSubPoolLimit: 10_000,
+	BaseFeeSubPoolLimit: 10_000,
+	QueuedSubPoolLimit:  50_000,
 }
 
 // Pool is interface for the transaction pool
@@ -142,12 +150,6 @@ type SubPoolType uint8
 const PendingSubPool SubPoolType = 1
 const BaseFeeSubPool SubPoolType = 2
 const QueuedSubPool SubPoolType = 3
-
-const PendingSubPoolLimit = 10 * 1024
-const BaseFeeSubPoolLimit = 10 * 1024
-const QueuedSubPoolLimit = 100 * 1024
-
-const MaxSendersInfoCache = 2 * (PendingSubPoolLimit + BaseFeeSubPoolLimit + QueuedSubPoolLimit)
 
 // sender - immutable structure which stores only nonce and balance of account
 type sender struct {
@@ -620,7 +622,7 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 	if err = p.senders.onNewTxs(newTxs); err != nil {
 		return nil, err
 	}
-	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return nil, err
 	}
 
@@ -691,7 +693,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -719,7 +721,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	//log.Info("[txpool] on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
 	return nil
 }
-func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
+func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
 	for i := range newTxs.txs {
 		if newTxs.txs[i].senderID == 0 {
 			return fmt.Errorf("senderID can't be zero")
@@ -739,7 +741,7 @@ func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, senders *s
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
 
-	promote(pending, baseFee, queued, discard)
+	promote(pending, baseFee, queued, cfg, discard)
 	pending.EnforceBestInvariants()
 
 	return nil
@@ -792,7 +794,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -824,7 +826,7 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 }
-func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
+func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
 	for i := range unwindTxs.txs {
 		if unwindTxs.txs[i].senderID == 0 {
 			return fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero")
@@ -862,7 +864,7 @@ func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, senders 
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
 
-	promote(pending, baseFee, queued, discard)
+	promote(pending, baseFee, queued, cfg, discard)
 	pending.EnforceBestInvariants()
 
 	return nil
@@ -1026,7 +1028,7 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 	})
 }
 
-func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx)) {
+func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard func(*metaTx)) {
 	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
@@ -1046,7 +1048,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 	}
 
 	//2. If top element in the worst green queue has subPool == 0b1111, but there is not enough room in the pool, discard.
-	for worst := pending.Worst(); pending.Len() > PendingSubPoolLimit; worst = pending.Worst() {
+	for worst := pending.Worst(); pending.Len() > cfg.PendingSubPoolLimit; worst = pending.Worst() {
 		if worst.subPool >= 0b11111 { // TODO: here must 'subPool == 0b1111' or 'subPool <= 0b1111' ?
 			break
 		}
@@ -1075,7 +1077,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 	}
 
 	//5. If the top element in the worst yellow queue has subPool == 0x1110, but there is not enough room in the pool, discard.
-	for worst := baseFee.Worst(); baseFee.Len() > BaseFeeSubPoolLimit; worst = baseFee.Worst() {
+	for worst := baseFee.Worst(); baseFee.Len() > cfg.BaseFeeSubPoolLimit; worst = baseFee.Worst() {
 		if worst.subPool >= 0b11110 {
 			break
 		}
@@ -1105,7 +1107,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 	}
 
 	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
-	for _ = queued.Worst(); queued.Len() > QueuedSubPoolLimit; _ = queued.Worst() {
+	for _ = queued.Worst(); queued.Len() > cfg.QueuedSubPoolLimit; _ = queued.Worst() {
 		discard(queued.PopWorst())
 	}
 }
@@ -1620,7 +1622,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := onNewTxs(0, cache, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+	if err := onNewTxs(0, cache, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
