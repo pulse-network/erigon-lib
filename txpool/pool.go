@@ -409,7 +409,7 @@ func (p *TxPool) logStats() {
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	idsInMem := p.senders.idsCount()
+	//idsInMem := p.senders.idsCount()
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
@@ -418,7 +418,7 @@ func (p *TxPool) logStats() {
 		"pending", p.pending.Len(),
 		"baseFee", p.baseFee.Len(),
 		"queued", p.queued.Len(),
-		"ids_in_mem", idsInMem,
+		//"ids_in_mem", idsInMem,
 		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
 	)
 	//if ASSERT {
@@ -1412,7 +1412,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					continue
 				}
 				writeToDbBytesCounter.Set(written)
-				log.Info("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
+				log.Debug("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
 			}
 		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
 			notifyMiningAboutNewSlots()
