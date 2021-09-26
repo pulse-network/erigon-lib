@@ -12,7 +12,6 @@ remotekv = []
 snapshotsync = []
 txpool = []
 db = ["once_cell", "serde", "toml"]
-web3 = []
 
 [dependencies]
 arrayref = "0.3"

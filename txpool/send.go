@@ -18,6 +18,7 @@ package txpool
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/ledgerwatch/erigon-lib/direct"
@@ -86,6 +87,7 @@ func (f *Send) BroadcastLocalPooledTxs(txs Hashes) (sentToPeers int) {
 		data := EncodeHashes(pending, nil)
 		var req66, req65 *sentry.OutboundMessageData
 		for _, sentryClient := range f.sentryClients {
+			fmt.Printf("ready: %t\n", sentryClient.Ready())
 			if !sentryClient.Ready() {
 				continue
 			}

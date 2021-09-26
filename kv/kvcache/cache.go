@@ -35,13 +35,11 @@ import (
 
 type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
-	View(ctx context.Context, tx kv.Tx) (CacheView, error)
+	View(ctx context.Context, tx kv.Tx) (ViewID, error)
 	OnNewBlock(sc *remote.StateChangeBatch)
 	//Evict() int
 	Len() int
-}
-type CacheView interface {
-	Get(k []byte) ([]byte, error)
+	Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error)
 }
 
 // Coherent works on top of Database Transaction and pair Coherent+ReadTransaction must
@@ -86,15 +84,13 @@ type Coherent struct {
 	hits, miss, timeout *metrics.Counter
 	keys, keys2         *metrics.Counter
 	latestViewID        ViewID
-	latestView          *CoherentRoot
+	latestView          *CoherentView
 	evictList           *List
-	roots               map[ViewID]*CoherentRoot
+	roots               map[ViewID]*CoherentView
 	lock                sync.RWMutex
 	cfg                 CoherentCacheConfig
-	search              *Element
 }
-
-type CoherentRoot struct {
+type CoherentView struct {
 	cache           *btree.BTree
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
@@ -106,20 +102,8 @@ type CoherentRoot struct {
 	isCanonical bool
 }
 
-// CoherentView - dumb object, which proxy all requests to Coherent object.
-// It's thread-safe, because immutable
-type CoherentView struct {
-	viewID ViewID
-	cache  *Coherent
-	tx     kv.Tx
-}
-
-func (c *CoherentView) Get(k []byte) ([]byte, error) { return c.cache.Get(k, c.tx, c.viewID) }
-
-var _ Cache = (*Coherent)(nil)         // compile-time interface check
-var _ CacheView = (*CoherentView)(nil) // compile-time interface check
-
-const DEGREE = 32
+var _ Cache = (*Coherent)(nil) // compile-time interface check
+//var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 
 type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
@@ -134,15 +118,14 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	NewBlockWait: 50 * time.Millisecond,
 	KeysLimit:    1_000_000,
 	MetricsLabel: "default",
-	WithStorage:  false,
+	WithStorage:  true,
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
 	return &Coherent{
-		roots:     map[ViewID]*CoherentRoot{},
+		roots:     map[ViewID]*CoherentView{},
 		evictList: NewList(),
 		cfg:       cfg,
-		search:    &Element{},
 		miss:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		timeout:   metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
@@ -152,31 +135,31 @@ func New(cfg CoherentCacheConfig) *Coherent {
 }
 
 // selectOrCreateRoot - used for usual getting root
-func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
+func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentView {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	r, ok := c.roots[viewID]
 	if ok {
 		return r
 	}
-	r = &CoherentRoot{ready: make(chan struct{})}
+	r = &CoherentView{ready: make(chan struct{})}
 	if prevView, ok := c.roots[viewID-1]; ok {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
 		r.cache = prevView.cache.Clone()
 		r.isCanonical = prevView.isCanonical
 	} else {
 		//log.Info("advance: new", "to", viewID)
-		r.cache = btree.New(DEGREE)
+		r.cache = btree.New(32)
 	}
 	c.roots[viewID] = r
 	return r
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
+func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 	r, rootExists := c.roots[viewID]
 	if !rootExists {
-		r = &CoherentRoot{ready: make(chan struct{})}
+		r = &CoherentView{ready: make(chan struct{})}
 		c.roots[viewID] = r
 	}
 	if prevView, ok := c.roots[viewID-1]; ok && prevView.isCanonical {
@@ -186,7 +169,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 		c.evictList.Init()
 		if r.cache == nil {
 			//log.Info("advance: new", "to", viewID)
-			r.cache = btree.New(DEGREE)
+			r.cache = btree.New(32)
 		} else {
 			r.cache.Ascend(func(i btree.Item) bool {
 				c.evictList.PushFront(i.(*Element))
@@ -249,13 +232,13 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 
 type ViewID uint64
 
-func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
+func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
 	id := ViewID(tx.ViewID())
 	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
 	case <-r.ready:
 		//fmt.Printf("recv broadcast: %d\n", id)
-		return &CoherentView{viewID: id, tx: tx, cache: c}, nil
+		return id, nil
 	default:
 	}
 
@@ -263,25 +246,22 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	case <-r.ready:
 		//fmt.Printf("recv broadcast2: %d\n", tx.ViewID())
 	case <-ctx.Done():
-		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
+		return 0, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		c.timeout.Inc()
 		//log.Info("timeout", "db_id", id, "has_btree", r.cache != nil)
 	}
-	return &CoherentView{viewID: ViewID(tx.ViewID()), tx: tx, cache: c}, nil
+	return ViewID(tx.ViewID()), nil
 }
 
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RLock()
-
-	//t := time.Now()
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
 	if !ok {
 		return nil, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
-	c.search.K = k
-	it := r.cache.Get(c.search)
+	it := r.cache.Get(&Element{K: k})
 	c.lock.RUnlock()
 
 	if it != nil {
@@ -289,7 +269,6 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		//fmt.Printf("i: %d,%s\n", i, time.Since(t))
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
@@ -307,14 +286,14 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	return v, nil
 }
 
-func (c *Coherent) removeOldest(r *CoherentRoot) {
+func (c *Coherent) removeOldest(r *CoherentView) {
 	e := c.evictList.Back()
 	if e != nil {
 		c.evictList.Remove(e)
 		r.cache.Delete(e)
 	}
 }
-func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
+func (c *Coherent) add(k, v []byte, r *CoherentView, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
 	if c.latestViewID != id {
@@ -358,13 +337,9 @@ func DebugStats(cache Cache) []Stat {
 }
 func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
 	defer func(t time.Time) { fmt.Printf("AssertCheckValues:327: %s\n", time.Since(t)) }(time.Now())
-	view, err := cache.View(ctx, tx)
+	viewID, err := cache.View(ctx, tx)
 	if err != nil {
 		return 0, err
-	}
-	castedView, ok := view.(*CoherentView)
-	if !ok {
-		return 0, nil
 	}
 	casted, ok := cache.(*Coherent)
 	if !ok {
@@ -374,11 +349,11 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	casted.lock.RLock()
 	defer casted.lock.RUnlock()
 	//log.Info("AssertCheckValues start", "db_id", tx.ViewID(), "mem_id", casted.id.Load(), "len", casted.cache.Len())
-	root, ok := casted.roots[castedView.viewID]
+	view, ok := casted.roots[viewID]
 	if !ok {
 		return 0, nil
 	}
-	root.cache.Ascend(func(i btree.Item) bool {
+	view.cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Element).K, i.(*Element).V
 		var dbV []byte
 		dbV, err = tx.GetOne(kv.PlainState, k)
@@ -440,9 +415,7 @@ type Element struct {
 	K, V []byte
 }
 
-func (e *Element) Less(than btree.Item) bool {
-	return bytes.Compare(e.K, than.(*Element).K) < 0
-}
+func (p *Element) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Element).K) < 0 }
 
 // ========= copypaste of List implementation from stdlib ========
 
