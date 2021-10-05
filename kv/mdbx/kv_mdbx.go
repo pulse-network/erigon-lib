@@ -145,7 +145,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.verbosity != -1 {
-		err = env.SetDebug(mdbx.LogLvlDebug, mdbx.DbgAssert, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
+		err = env.SetDebug(mdbx.LogLvlTrace, mdbx.DbgAssert, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
 		if err != nil {
 			return nil, fmt.Errorf("db verbosity set: %w", err)
 		}
