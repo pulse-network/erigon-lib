@@ -32,7 +32,6 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/torquem-ch/mdbx-go/exp/mdbxpool"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 )
 
@@ -144,9 +143,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	if opts.verbosity != -1 {
-		err = env.SetDebug(mdbx.LogLvlTrace, mdbx.DbgAssert, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
+		err = env.SetDebug(mdbx.LogLvl(opts.verbosity), mdbx.DbgDoNotChange, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
 		if err != nil {
 			return nil, fmt.Errorf("db verbosity set: %w", err)
 		}
@@ -232,7 +230,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		wg:      &sync.WaitGroup{},
 		buckets: kv.TableCfg{},
 		txSize:  dirtyPagesLimit * pageSize,
-		txPool:  mdbxpool.NewTxnPool(env),
 	}
 	customBuckets := opts.bucketsCfg(kv.ChaindataTablesCfg)
 	for name, cfg := range customBuckets { // copy map to avoid changing global variable
@@ -296,7 +293,6 @@ type MdbxKV struct {
 	buckets kv.TableCfg
 	opts    MdbxOpts
 	txSize  uint64
-	txPool  *mdbxpool.TxnPool
 }
 
 // openDBIs - first trying to open existing DBI's in RO transaction
@@ -343,7 +339,6 @@ func (db *MdbxKV) Close() {
 	}
 
 	db.wg.Wait()
-	db.txPool.Close()
 	db.env.Close()
 	db.env = nil
 
@@ -374,8 +369,7 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		}
 	}()
 
-	tx, err := db.txPool.BeginTxn(mdbx.Readonly)
-	//tx, err := db.env.BeginTxn(nil, mdbx.Readonly)
+	tx, err := db.env.BeginTxn(nil, mdbx.Readonly)
 	if err != nil {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, db.opts.label.String(), callers(10))
 	}
@@ -802,11 +796,7 @@ func (tx *MdbxTx) Rollback() {
 	}()
 	tx.closeCursors()
 	//tx.printDebugInfo()
-	if tx.readOnly {
-		tx.db.txPool.Abort(tx.tx)
-	} else {
-		tx.tx.Abort()
-	}
+	tx.tx.Abort()
 }
 
 func (tx *MdbxTx) SpaceDirty() (uint64, uint64, error) {
