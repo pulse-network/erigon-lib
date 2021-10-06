@@ -175,9 +175,7 @@ func (tx *remoteTx) Commit() error {
 }
 
 func (tx *remoteTx) Rollback() {
-	for _, c := range tx.cursors {
-		c.Close()
-	}
+	// don't spend time on closing cursors - server will cleanup everything well
 	tx.closeGrpcStream()
 }
 
