@@ -332,3 +332,25 @@ type RwCursorDupSort interface {
 }
 
 var ErrNotSupported = errors.New("not supported")
+
+func BeeginRoIfNil(tx Tx, db RoDB, ctx context.Context) (Tx, bool, func(), error) {
+	if tx != nil {
+		return tx, false, func() {}, nil
+	}
+	tx, err := db.BeginRo(ctx)
+	if err != nil {
+		return tx, false, func() {}, err
+	}
+	return tx, true, tx.Rollback, nil
+}
+
+func BeeginRwIfNil(tx RwTx, db RwDB, ctx context.Context) (RwTx, bool, func(), error) {
+	if tx != nil {
+		return tx, false, func() {}, nil
+	}
+	tx, err := db.BeginRw(ctx)
+	if err != nil {
+		return tx, false, func() {}, err
+	}
+	return tx, true, tx.Rollback, nil
+}
