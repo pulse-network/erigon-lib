@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -356,6 +357,8 @@ func (db *MdbxKV) Close() {
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
+	defer kv.DbBeginTotal.UpdateDuration(time.Now())
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
