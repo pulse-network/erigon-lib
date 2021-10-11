@@ -227,7 +227,7 @@ func (b *oldestEntrySortableBuffer) Put(k, v []byte) {
 		return
 	}
 
-	b.size += len(k) + len(v)
+	b.size += len(k)*4 + len(v) // * 2 to store bytes and string, * 2 for go's map overhead
 	b.entries[ks] = v
 }
 
