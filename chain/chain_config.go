@@ -79,6 +79,9 @@ type Config struct {
 	// Gnosis Chain fork blocks
 	PosdaoBlock *big.Int `json:"posdaoBlock,omitempty"`
 
+	// PulseChain fork blocks
+	PrimordialPulseBlock *big.Int `json:"primordialPulseBlock,omitempty"` // PrimordialPulseBlock switch block (nil = no fork, 0 = already activated)
+
 	Eip1559FeeCollector           *common.Address `json:"eip1559FeeCollector,omitempty"`           // (Optional) Address where burnt EIP-1559 fees go to
 	Eip1559FeeCollectorTransition *big.Int        `json:"eip1559FeeCollectorTransition,omitempty"` // (Optional) Block from which burnt EIP-1559 fees go to the Eip1559FeeCollector
 
@@ -86,18 +89,19 @@ type Config struct {
 	CalcuttaBlock *big.Int `json:"calcuttaBlock,omitempty"`
 
 	// Various consensus engines
-	Ethash *EthashConfig `json:"ethash,omitempty"`
-	Clique *CliqueConfig `json:"clique,omitempty"`
-	Aura   *AuRaConfig   `json:"aura,omitempty"`
-	Parlia *ParliaConfig `json:"parlia,omitempty" toml:",omitempty"`
-	Bor    *BorConfig    `json:"bor,omitempty"`
+	Ethash     *EthashConfig `json:"ethash,omitempty"`
+	Clique     *CliqueConfig `json:"clique,omitempty"`
+	Aura       *AuRaConfig   `json:"aura,omitempty"`
+	Parlia     *ParliaConfig `json:"parlia,omitempty" toml:",omitempty"`
+	Bor        *BorConfig    `json:"bor,omitempty"`
+	PulseChain *PulseChain   `json:"pulseChain,omitempty"`
 }
 
 func (c *Config) String() string {
 	engine := c.getEngine()
 
 	if c.Consensus == ParliaConsensus {
-		return fmt.Sprintf("{ChainID: %v Ramanujan: %v, Niels: %v, MirrorSync: %v, Bruno: %v, Euler: %v, Gibbs: %v, Nano: %v, Moran: %v, Gibbs: %v, Engine: %v}",
+		return fmt.Sprintf("{ChainID: %v Ramanujan: %v, Niels: %v, MirrorSync: %v, Bruno: %v, Euler: %v, Gibbs: %v, Nano: %v, Moran: %v, Gibbs: %v, Primordial Pulse: %v, Engine: %v}",
 			c.ChainID,
 			c.RamanujanBlock,
 			c.NielsBlock,
@@ -108,11 +112,12 @@ func (c *Config) String() string {
 			c.NanoBlock,
 			c.MoranBlock,
 			c.GibbsBlock,
+			c.PrimordialPulseBlock,
 			engine,
 		)
 	}
 
-	return fmt.Sprintf("{ChainID: %v, Homestead: %v, DAO: %v, DAO Support: %v, Tangerine Whistle: %v, Spurious Dragon: %v, Byzantium: %v, Constantinople: %v, Petersburg: %v, Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, Gray Glacier: %v, Terminal Total Difficulty: %v, Merge Netsplit: %v, Shanghai: %v, Cancun: %v, Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v, Homestead: %v, DAO: %v, DAO Support: %v, Tangerine Whistle: %v, Spurious Dragon: %v, Byzantium: %v, Constantinople: %v, Petersburg: %v, Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, Gray Glacier: %v, Terminal Total Difficulty: %v, Merge Netsplit: %v, Shanghai: %v, Cancun: %v, Primordial Pulse: %v, Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -132,6 +137,7 @@ func (c *Config) String() string {
 		c.MergeNetsplitBlock,
 		c.ShanghaiTime,
 		c.CancunTime,
+		c.PrimordialPulseBlock,
 		engine,
 	)
 }
@@ -319,6 +325,17 @@ func (c *Config) IsCancun(time uint64) bool {
 	return isForked(c.CancunTime, time)
 }
 
+// IsPrimordialPulseBlock returns whether time is either equal to the primordial pulse fork time or greater.
+func (c *Config) IsPrimordialPulseBlock(time uint64) bool {
+	return c.PrimordialPulseBlock != nil && time >= c.PrimordialPulseBlock.Uint64()
+}
+
+// PrimordialPulseAhead Returns true if there is a PrimordialPulse block in the future, indicating this chain
+// should still be evaluated using the ethash consensus engine and with mainnet ChainID.
+func (c *Config) PrimordialPulseAhead(number uint64) bool {
+	return c.PrimordialPulseBlock != nil && c.PrimordialPulseBlock.Uint64() > number
+}
+
 func (c *Config) IsEip1559FeeCollector(num uint64) bool {
 	return c.Eip1559FeeCollector != nil && isForked(c.Eip1559FeeCollectorTransition, num)
 }
@@ -422,7 +439,7 @@ func (c *Config) checkCompatible(newcfg *Config, head uint64) *ConfigCompatError
 	if incompatible(c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock, head) {
 		return newCompatError("Spurious Dragon fork block", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
 	}
-	if c.IsSpuriousDragon(head) && !numEqual(c.ChainID, newcfg.ChainID) {
+	if c.IsSpuriousDragon(head) && !numEqual(c.ChainID, newcfg.ChainID) && !newcfg.IsPrimordialPulseBlock(head) {
 		return newCompatError("EIP155 chain ID", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
 	}
 	if incompatible(c.ByzantiumBlock, newcfg.ByzantiumBlock, head) {
@@ -458,6 +475,9 @@ func (c *Config) checkCompatible(newcfg *Config, head uint64) *ConfigCompatError
 	}
 	if incompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, head) {
 		return newCompatError("Merge netsplit block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
+	}
+	if incompatible(c.PrimordialPulseBlock, newcfg.PrimordialPulseBlock, head) {
+		return newCompatError("PrimordialPulse fork block", c.PrimordialPulseBlock, newcfg.PrimordialPulseBlock)
 	}
 
 	// Parlia forks
@@ -570,6 +590,15 @@ type ParliaConfig struct {
 // String implements the stringer interface, returning the consensus engine details.
 func (b *ParliaConfig) String() string {
 	return "parlia"
+}
+
+type PulseChain struct {
+	Treasury *Treasury `json:"treasury,omitempty"` // An optional treasury which will receive allocations during the PrimordialPulseBlock
+}
+
+// String implements the stringer interface, returning the consensus engine details.
+func (b *PulseChain) String() string {
+	return "PulseChain"
 }
 
 // BorConfig is the consensus engine configs for Matic bor based sealing.
