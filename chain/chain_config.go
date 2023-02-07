@@ -315,13 +315,13 @@ func (c *Config) IsCancun(time uint64) bool {
 
 // IsPrimordialPulseBlock returns whether time is either equal to the primordial pulse fork time or greater.
 func (c *Config) IsPrimordialPulseBlock(time uint64) bool {
-	return c.PrimordialPulseBlock != nil && time >= c.PrimordialPulseBlock.Uint64()
+	return c.PulseChain != nil && c.PrimordialPulseBlock != nil && time >= c.PrimordialPulseBlock.Uint64()
 }
 
 // PrimordialPulseAhead Returns true if there is a PrimordialPulse block in the future, indicating this chain
 // should still be evaluated using the ethash consensus engine and with mainnet ChainID.
 func (c *Config) PrimordialPulseAhead(number uint64) bool {
-	return c.PrimordialPulseBlock != nil && c.PrimordialPulseBlock.Uint64() > number
+	return c.PulseChain != nil && c.PrimordialPulseBlock != nil && c.PrimordialPulseBlock.Uint64() > number
 }
 
 func (c *Config) IsEip1559FeeCollector(num uint64) bool {
