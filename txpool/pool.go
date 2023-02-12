@@ -328,9 +328,10 @@ type TxPool struct {
 	blockGasLimit           atomic.Uint64
 	shanghaiTime            *big.Int
 	isPostShanghai          atomic.Bool
+	isPulseChain            bool
 }
 
-func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime *big.Int) (*TxPool, error) {
+func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime *big.Int, isPulseChain bool) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(10_000, nil)
 	if err != nil {
 		return nil, err
@@ -368,6 +369,7 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvca
 		unprocessedRemoteTxs:    &types.TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
 		shanghaiTime:            shanghaiTime,
+		isPulseChain:            isPulseChain,
 	}, nil
 }
 
@@ -1687,7 +1689,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	}
 
 	txs := types.TxSlots{}
-	parseCtx := types.NewTxParseContext(p.chainID)
+	parseCtx := types.NewTxParseContext(p.chainID, p.isPulseChain)
 	parseCtx.WithSender(false)
 
 	i := 0
