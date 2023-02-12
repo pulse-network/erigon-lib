@@ -61,7 +61,7 @@ type StateChangesClient interface {
 // NewFetch creates a new fetch object that will work with given sentry clients. Since the
 // SentryClient here is an interface, it is suitable for mocking in tests (mock will need
 // to implement all the functions of the SentryClient interface).
-func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Pool, stateChangesClient StateChangesClient, coreDB kv.RoDB, db kv.RwDB, chainID uint256.Int) *Fetch {
+func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Pool, stateChangesClient StateChangesClient, coreDB kv.RoDB, db kv.RwDB, chainID uint256.Int, isPulseChain bool) *Fetch {
 	f := &Fetch{
 		ctx:                  ctx,
 		sentryClients:        sentryClients,
@@ -69,8 +69,8 @@ func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Poo
 		coreDB:               coreDB,
 		db:                   db,
 		stateChangesClient:   stateChangesClient,
-		stateChangesParseCtx: types2.NewTxParseContext(chainID).ChainIDRequired(), //TODO: change ctx if rules changed
-		pooledTxsParseCtx:    types2.NewTxParseContext(chainID).ChainIDRequired(),
+		stateChangesParseCtx: types2.NewTxParseContext(chainID, isPulseChain).ChainIDRequired(), //TODO: change ctx if rules changed
+		pooledTxsParseCtx:    types2.NewTxParseContext(chainID, isPulseChain).ChainIDRequired(),
 	}
 	f.pooledTxsParseCtx.ValidateRLP(f.pool.ValidateSerializedTxn)
 	f.stateChangesParseCtx.ValidateRLP(f.pool.ValidateSerializedTxn)
