@@ -105,11 +105,12 @@ type GrpcServer struct {
 	db              kv.RoDB
 	NewSlotsStreams *NewSlotsStreams
 
-	chainID uint256.Int
-	logger  log.Logger
+	chainID      uint256.Int
+	logger       log.Logger
+	isPulseChain bool
 }
 
-func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB, chainID uint256.Int, logger log.Logger) *GrpcServer {
+func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB, chainID uint256.Int, logger log.Logger, isPulseChain bool) *GrpcServer {
 	return &GrpcServer{ctx: ctx, txPool: txPool, db: db, NewSlotsStreams: &NewSlotsStreams{}, chainID: chainID, logger: logger}
 }
 
@@ -182,7 +183,8 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	defer tx.Rollback()
 
 	var slots types.TxSlots
-	parseCtx := types.NewTxParseContext(s.chainID).ChainIDRequired()
+
+	parseCtx := types.NewTxParseContext(s.chainID, s.isPulseChain).ChainIDRequired()
 	parseCtx.ValidateRLP(s.txPool.ValidateSerializedTxn)
 
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}

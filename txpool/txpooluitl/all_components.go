@@ -118,22 +118,23 @@ func AllComponents(ctx context.Context, cfg txpoolcfg.Config, cache kvcache.Cach
 	}
 
 	chainID, _ := uint256.FromBig(chainConfig.ChainID)
+	isPulseChain := chainConfig.PulseChain != nil
 
 	shanghaiTime := chainConfig.ShanghaiTime
 	if cfg.OverrideShanghaiTime != nil {
 		shanghaiTime = cfg.OverrideShanghaiTime
 	}
 
-	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime, logger)
+	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime, logger, isPulseChain)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	fetch := txpool.NewFetch(ctx, sentryClients, txPool, stateChangesClient, chainDB, txPoolDB, *chainID, logger)
+	fetch := txpool.NewFetch(ctx, sentryClients, txPool, stateChangesClient, chainDB, txPoolDB, *chainID, logger, isPulseChain)
 	//fetch.ConnectCore()
 	//fetch.ConnectSentries()
 
 	send := txpool.NewSend(ctx, sentryClients, txPool, logger)
-	txpoolGrpcServer := txpool.NewGrpcServer(ctx, txPool, txPoolDB, *chainID, logger)
+	txpoolGrpcServer := txpool.NewGrpcServer(ctx, txPool, txPoolDB, *chainID, logger, isPulseChain)
 	return txPoolDB, txPool, fetch, send, txpoolGrpcServer, nil
 }

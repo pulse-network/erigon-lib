@@ -48,7 +48,7 @@ func TestNonceFromAddress(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New(), false)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -168,7 +168,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New(), false)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -285,7 +285,7 @@ func TestReverseNonces(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New(), false)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -412,7 +412,7 @@ func TestTxPoke(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New(), false)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -677,7 +677,7 @@ func TestShanghaiValidateTx(t *testing.T) {
 			}
 
 			cache := &kvcache.DummyCache{}
-			pool, err := New(ch, coreDB, cfg, cache, *u256.N1, shanghaiTime, logger)
+			pool, err := New(ch, coreDB, cfg, cache, *u256.N1, shanghaiTime, logger, false)
 			asrt.NoError(err)
 			ctx := context.Background()
 			tx, err := coreDB.BeginRw(ctx)

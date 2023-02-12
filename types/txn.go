@@ -62,16 +62,18 @@ type TxParseContext struct {
 	allowPreEip2s   bool // Allow s > secp256k1n/2; see EIP-2
 	chainIDRequired bool
 	IsProtected     bool
+	IsPulseChain    bool
 }
 
-func NewTxParseContext(chainID uint256.Int) *TxParseContext {
+func NewTxParseContext(chainID uint256.Int, isPulseChain bool) *TxParseContext {
 	if chainID.IsZero() {
 		panic("wrong chainID")
 	}
 	ctx := &TxParseContext{
-		withSender: true,
-		Keccak1:    sha3.NewLegacyKeccak256(),
-		Keccak2:    sha3.NewLegacyKeccak256(),
+		withSender:   true,
+		Keccak1:      sha3.NewLegacyKeccak256(),
+		Keccak2:      sha3.NewLegacyKeccak256(),
+		IsPulseChain: isPulseChain,
 	}
 
 	// behave as of London enabled
@@ -200,8 +202,16 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			}
 			ctx.ChainID.Set(&ctx.cfg.ChainID)
 		}
+
 		if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
-			return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+			// Handle non-PulseChain
+			if !ctx.IsPulseChain {
+				return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+			}
+			// ChainID must be 1 (mainnet) or match PulseChain ChainID
+			if !ctx.ChainID.Eq(uint256.NewInt(1)) {
+				return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid PulseChain chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+			}
 		}
 	}
 	// Next follows the nonce, which we need to parse
@@ -328,8 +338,16 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		} else {
 			ctx.ChainID.Sub(&ctx.V, u256.N35)
 			ctx.ChainID.Rsh(&ctx.ChainID, 1)
+
 			if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
-				return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+				// Handle non-PulseChain
+				if !ctx.IsPulseChain {
+					return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+				}
+				// ChainID must be 1 (mainnet) or match PulseChain ChainID
+				if !ctx.ChainID.Eq(uint256.NewInt(1)) {
+					return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid PulseChain chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+				}
 			}
 
 			chainIDBits = ctx.ChainID.BitLen()

@@ -199,7 +199,7 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 		senderIDs[senders.AddressAt(i%senders.Len())] = senderID
 	}
 	txs.Txs = make([]*types.TxSlot, len(txNonce))
-	parseCtx := types.NewTxParseContext(*u256.N1)
+	parseCtx := types.NewTxParseContext(*u256.N1, false)
 	parseCtx.WithSender(false)
 	for i := range txNonce {
 		txs.Txs[i] = &types.TxSlot{
@@ -314,7 +314,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		cfg := txpoolcfg.DefaultConfig
 		sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-		pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+		pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New(), false)
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
@@ -545,7 +545,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, types.TxSlots{}, "after_flush")
 		checkNotify(p2pReceived, types.TxSlots{}, "after_flush")
 
-		p2, err := New(ch, coreDB, txpoolcfg.DefaultConfig, sendersCache, *u256.N1, nil, log.New())
+		p2, err := New(ch, coreDB, txpoolcfg.DefaultConfig, sendersCache, *u256.N1, nil, log.New(), false)
 		assert.NoError(err)
 		p2.senders = pool.senders // senders are not persisted
 		err = coreDB.View(ctx, func(coreTx kv.Tx) error { return p2.fromDB(ctx, tx, coreTx) })
