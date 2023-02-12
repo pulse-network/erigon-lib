@@ -62,16 +62,18 @@ type TxParseContext struct {
 	allowPreEip2s   bool // Allow s > secp256k1n/2; see EIP-2
 	chainIDRequired bool
 	IsProtected     bool
+	IsPulseChain    bool
 }
 
-func NewTxParseContext(chainID uint256.Int) *TxParseContext {
+func NewTxParseContext(chainID uint256.Int, isPulseChain bool) *TxParseContext {
 	if chainID.IsZero() {
 		panic("wrong chainID")
 	}
 	ctx := &TxParseContext{
-		withSender: true,
-		Keccak1:    sha3.NewLegacyKeccak256(),
-		Keccak2:    sha3.NewLegacyKeccak256(),
+		withSender:   true,
+		Keccak1:      sha3.NewLegacyKeccak256(),
+		Keccak2:      sha3.NewLegacyKeccak256(),
+		IsPulseChain: isPulseChain,
 	}
 
 	// behave as of London enabled
@@ -124,6 +126,7 @@ func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
 func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func([]byte) error) (p int, err error) {
+
 	if len(payload) == 0 {
 		return 0, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}
@@ -200,7 +203,12 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			}
 			ctx.ChainID.Set(&ctx.cfg.ChainID)
 		}
-		if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
+		if ctx.IsPulseChain {
+			// ChainID must be 1 (mainnet) or match PulseChain ChainID
+			if !ctx.ChainID.Eq(uint256.NewInt(1)) || !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
+				return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+			}
+		} else if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
 			return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
 		}
 	}

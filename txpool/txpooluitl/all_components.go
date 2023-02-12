@@ -115,6 +115,9 @@ func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, 
 		return nil, nil, nil, nil, nil, err
 	}
 
+	isPulseChain := chainConfig.PulseChain != nil
+	ctx = context.WithValue(ctx, "isPulseChain", isPulseChain)
+
 	chainID, _ := uint256.FromBig(chainConfig.ChainID)
 
 	shanghaiTime := chainConfig.ShanghaiTime
@@ -122,7 +125,7 @@ func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, 
 		shanghaiTime = cfg.OverrideShanghaiTime
 	}
 
-	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime)
+	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime, isPulseChain)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
