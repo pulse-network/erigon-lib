@@ -321,9 +321,9 @@ func (c *Config) IsPrague(time uint64) bool {
 	return isForked(c.PragueTime, time)
 }
 
-// IsPrimordialPulseBlock returns whether time is either equal to the primordial pulse fork time or greater.
-func (c *Config) IsPrimordialPulseBlock(time uint64) bool {
-	return c.PulseChain != nil && c.PrimordialPulseBlock != nil && time >= c.PrimordialPulseBlock.Uint64()
+// IsPrimordialPulseBlock returns whether or not the given block is the primordial pulse block.
+func (c *Config) IsPrimordialPulseBlock(number uint64) bool {
+	return c.PulseChain != nil && c.PrimordialPulseBlock != nil && number == c.PrimordialPulseBlock.Uint64()
 }
 
 // PrimordialPulseAhead Returns true if there is a PrimordialPulse block in the future, indicating this chain
@@ -435,7 +435,8 @@ func (c *Config) checkCompatible(newcfg *Config, head uint64) *ConfigCompatError
 	if incompatible(c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock, head) {
 		return newCompatError("Spurious Dragon fork block", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
 	}
-	if c.IsSpuriousDragon(head) && !numEqual(c.ChainID, newcfg.ChainID) && !newcfg.IsPrimordialPulseBlock(head) {
+	// allow mismatching ChainID if we're at the PrimordialPulseBlock
+	if c.IsSpuriousDragon(head) && !numEqual(c.ChainID, newcfg.ChainID) && !newcfg.IsPrimordialPulseBlock(head+1) {
 		return newCompatError("EIP155 chain ID", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
 	}
 	if incompatible(c.ByzantiumBlock, newcfg.ByzantiumBlock, head) {
