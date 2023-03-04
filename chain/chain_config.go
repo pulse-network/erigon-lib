@@ -440,9 +440,9 @@ func (c *Config) checkCompatible(newcfg *Config, head uint64) *ConfigCompatError
 		return newCompatError("Spurious Dragon fork block", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
 	}
 	// allow mismatching ChainID if we're at the PrimordialPulseBlock
-	if c.IsSpuriousDragon(head) && !numEqual(c.ChainID, newcfg.ChainID) && !newcfg.IsPrimordialPulseBlock(head+1) {
-		return newCompatError("EIP155 chain ID", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
-	}
+	//if c.IsSpuriousDragon(head) && !numEqual(c.ChainID, newcfg.ChainID) && !newcfg.IsPrimordialPulseBlock(head+1) {
+	//	return newCompatError("EIP155 chain ID", c.SpuriousDragonBlock, newcfg.SpuriousDragonBlock)
+	//}
 	if incompatible(c.ByzantiumBlock, newcfg.ByzantiumBlock, head) {
 		return newCompatError("Byzantium fork block", c.ByzantiumBlock, newcfg.ByzantiumBlock)
 	}
