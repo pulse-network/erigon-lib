@@ -39,7 +39,7 @@ type Config struct {
 	HomesteadBlock *big.Int `json:"homesteadBlock,omitempty"` // Homestead switch block (nil = no fork, 0 = already homestead)
 
 	DAOForkBlock   *big.Int `json:"daoForkBlock,omitempty"`   // TheDAO hard-fork switch block (nil = no fork)
-	DAOForkSupport bool     `json:"daoForkSupport,omitempty"` // Whether the nodes supports or opposes the DAO hard-fork
+	DAOForkSupport *bool     `json:"daoForkSupport,omitempty"` // Whether the nodes supports or opposes the DAO hard-fork
 
 	// Tangerine Whistle (EIP150) implements the Gas price changes (https://github.com/ethereum/EIPs/issues/150)
 	TangerineWhistleBlock *big.Int    `json:"eip150Block,omitempty"` // EIP150 HF block (nil = no fork)
@@ -426,7 +426,8 @@ func (c *Config) checkCompatible(newcfg *Config, head uint64) *ConfigCompatError
 	if incompatible(c.DAOForkBlock, newcfg.DAOForkBlock, head) {
 		return newCompatError("DAO fork block", c.DAOForkBlock, newcfg.DAOForkBlock)
 	}
-	if c.IsDAOFork(head) && c.DAOForkSupport != newcfg.DAOForkSupport {
+	// in the case that c.DAOForkSupport is nil, assume no fork preference.
+	if c.IsDAOFork(head) && c.DAOForkSupport != newcfg.DAOForkSupport && c.DAOForkSupport != nil {
 		return newCompatError("DAO fork support flag", c.DAOForkBlock, newcfg.DAOForkBlock)
 	}
 	if incompatible(c.TangerineWhistleBlock, newcfg.TangerineWhistleBlock, head) {
