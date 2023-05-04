@@ -710,6 +710,12 @@ func (c *Config) Rules(num uint64, time uint64) *Rules {
 	if chainID == nil {
 		chainID = new(big.Int)
 	}
+	isShanghai := c.IsShanghai(time)
+	if c.PrimordialPulseAhead(num) {
+		// If the PrimordialPulse fork is ahead, derive the `isShanghai` rule
+		// from the Ethereum Mainnet Shanghai timestamp.
+		isShanghai = time >= 1681338455
+	}
 
 	return &Rules{
 		ChainID:               new(big.Int).Set(chainID),
@@ -722,7 +728,7 @@ func (c *Config) Rules(num uint64, time uint64) *Rules {
 		IsIstanbul:            c.IsIstanbul(num),
 		IsBerlin:              c.IsBerlin(num),
 		IsLondon:              c.IsLondon(num),
-		IsShanghai:            c.IsShanghai(time),
+		IsShanghai:            isShanghai,
 		IsCancun:              c.IsCancun(time),
 		IsSharding:            c.IsSharding(time),
 		IsPrague:              c.IsPrague(time),
