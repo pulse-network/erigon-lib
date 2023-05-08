@@ -208,13 +208,13 @@ func (c *Config) IsPrague(time uint64) bool {
 
 // IsPrimordialPulseBlock returns whether or not the given block is the primordial pulse block.
 func (c *Config) IsPrimordialPulseBlock(number uint64) bool {
-	return c.PulseChain != nil && c.PrimordialPulseBlock != nil && number == c.PrimordialPulseBlock.Uint64()
+	return c.PrimordialPulseBlock != nil && c.PrimordialPulseBlock.Uint64() == number
 }
 
 // PrimordialPulseAhead Returns true if there is a PrimordialPulse block in the future, indicating this chain
 // should still be evaluated using the ethash consensus engine and with mainnet ChainID.
 func (c *Config) PrimordialPulseAhead(number uint64) bool {
-	return c.PulseChain != nil && c.PrimordialPulseBlock != nil && c.PrimordialPulseBlock.Uint64() > number
+	return c.PrimordialPulseBlock != nil && c.PrimordialPulseBlock.Uint64() > number
 }
 
 func (c *Config) IsEip1559FeeCollector(num uint64) bool {
